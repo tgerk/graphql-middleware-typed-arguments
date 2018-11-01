@@ -1,21 +1,16 @@
-# graphql-middleware-apollo-upload-server
+# graphql-middleware-typed-arguments
 
-[![CircleCI](https://circleci.com/gh/homeroom-live/graphql-middleware-apollo-upload-server.svg?style=shield)](https://circleci.com/gh/homeroom-live/graphql-middleware-apollo-upload-server)
-[![npm version](https://badge.fury.io/js/graphql-middleware-apollo-upload-server.svg)](https://badge.fury.io/js/graphql-middleware-apollo-upload-server)
-
-GraphQL Middleware Apollo Upload Server manages uploads for you so you don't have to care about them.
-
-> ❗️ Requires [Apollo Upload Server](https://github.com/jaydenseric/apollo-upload-server).
+GraphQL Middleware Typed Arguments lets you define a processor function to massage, validate, authorize, or whatever your query, mutation, or field arguments of a certain type.  The middleware was originally developed as GraphQL Middleware Apollo Upload Server, which wonderfully separated streaming uploaded media to its ultimate destination from other concerns.
 
 ## Install
 
 ```bash
-yarn add graphql-middleware-apollo-upload-server
+npm install graphql-middleware-typed-arguments
 ```
 
 ## Overview
 
-`graphql-middleware-apollo-upload-server` handles file upload for you by searching for all `Upload` types first, and handling the files if they are included in arguments. Everything else is in your hands!
+`graphql-middleware-typed-arguments` lets you wrap a function around field arguments of any type.  The classic example is GraphQLUpload type in conjunction with Apollo Upload Server.  Now, also, you can attach an inspection function to any type of query argument.
 
 ## Features
 
@@ -25,10 +20,13 @@ yarn add graphql-middleware-apollo-upload-server
 
 ## Demo
 
+The example is taken directly from graphql-middleware-apollo-upload-server which was basis for this generalization.  There are two changes from the original:  the GraphQLUpload type object is imported, but the type name "Upload" could be used as well.  (In fact, type names are simpler way to get at a type defined in SDL.)  The second change is providing the type (object or string) to the middleware factory function provided by this package: `processTypeArgs`.
+
 ```ts
 import { GraphQLServer } from 'graphql-yoga'
+import { GraphQLUpload } from 'apollo-upload-server'
 import { S3 } from 'aws-sdk'
-import { upload } from 'graphql-middleware-apollo-upload-server'
+import { processTypeArgs } from 'graphql-middleware-typed-arguments'
 
 const client = new S3({
   accessKeyId: __S3_KEY__,
@@ -36,20 +34,20 @@ const client = new S3({
   params: { Bucket: __S3_BUCKET__ },
 })
 
-const uploadToS3 = async file => {
+const uploadToS3 = file => {
   const { stream, filename, mimetype, encoding } = file
 
-  const response = await client
+  const response = client
     .upload({
       Key: filename,
       ACL: 'public-read',
       Body: file.stream,
     })
     .promise()
-
-  return {
-    name: filename,
-    url: response.Location
+    .then( response => ({
+      name: filename,
+      url: response.Location
+    }))
   }
 }
 
@@ -99,7 +97,7 @@ const resolvers = {
 const server = new GraphQLServer({
   typeDefs,
   resolvers,
-  middlewares: [upload({ uploadHandler: uploadToS3 })],
+  middlewares: [processTypeArgs({ type: GraphQLUpload, transform: uploadToS3 })],
   context: req => ({
     ...req,
     db: new Prisma({
@@ -116,20 +114,32 @@ server.listen(() => {
 ## API
 
 ```ts
-export interface IFile {
+interface IConfig<V, T> {
+  type: GraphQLType | string
+  transform: (value: V, root: any, args: {}, context: any, info: GraphQLResolveInfo) => Promise<T>
+}
+
+export const processTypeArgs<V, T> = (
+  config: IConfig<V, T>
+): IMiddleware
+
+// input and output types are up to you, just provide the transform function
+interface IFile {
   stream: string
   filename: string
   mimetype: string
   encoding: string
 }
 
-interface IConfig<output> {
-  uploadHandler: (file: IFile) => Promise<output>
+interface IRefS3 {
+  name: string
+  url: string
 }
 
-export const upload = <output>(
-  config: IConfig<output>,
-): IMiddleware
+const middlewareFunction = processTypeArgs({
+  type: 'Upload',
+  transform: uploadToS3
+})
 ```
 
 ## License

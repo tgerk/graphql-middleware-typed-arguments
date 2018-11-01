@@ -2,13 +2,14 @@ import test from 'ava'
 import { makeExecutableSchema } from 'graphql-tools'
 import { applyMiddleware } from 'graphql-middleware'
 import { GraphQLUpload } from 'apollo-upload-server'
-import { graphql, GraphQLString } from 'graphql'
+import { graphql, GraphQLList, GraphQLString } from 'graphql'
 import {
   findArgumentsOfType,
-  reinjectArguments,
-  processor,
+  getArgumentValue,
+  makeArgumentTransform,
 } from '../'
 
+// this interface traces to busboy file handling, as used by Apollo Upload Server
 interface IUpload {
   stream: string
   filename: string
@@ -38,7 +39,7 @@ test('Finds Argument With Type', async t => {
   const middleware = {
     Query: {
       test: async (resolve, parent, args, ctx, info) => {
-        const X = findArgumentsOfType(GraphQLString, info, args)
+        const X = findArgumentsOfType(GraphQLString, info)
         t.is(X.length, 1)
 
         return resolve()
@@ -78,7 +79,7 @@ test(`Doesn't find Argument With Type`, async t => {
   const middleware = {
     Query: {
       test: async (resolve, parent, args, ctx, info) => {
-        const X = findArgumentsOfType(GraphQLString, info, args)
+        const X = findArgumentsOfType(GraphQLString, info)
         t.is(X.length, 0)
 
         return resolve()
@@ -118,7 +119,7 @@ test('Finds Argument With List Type', async t => {
   const middleware = {
     Query: {
       test: async (resolve, parent, args, ctx, info) => {
-        const X = findArgumentsOfType(GraphQLString, info, args)
+        const X = findArgumentsOfType(GraphQLString, info)
         t.is(X.length, 1)
 
         return resolve()
@@ -158,8 +159,8 @@ test('Values in processor match', async t => {
   const middleware = {
     Query: {
       test: async (resolve, parent, args, ctx, info) => {
-        const X = findArgumentsOfType(GraphQLString, info, args)
-        t.is(X[0].argumentValue, 'trigger')
+        const X = findArgumentsOfType(GraphQLString, info)
+        t.is(getArgumentValue(args, X[0]), 'trigger')
 
         return resolve()
       },
@@ -201,8 +202,8 @@ test('Is GraphQLUpload type', async t => {
   const middleware = {
     Query: {
       test: async (resolve, parent, args, ctx, info) => {
-        const X = findArgumentsOfType(GraphQLUpload, info, args)
-        t.is(X[0].argumentName, 'upload')
+        const X = findArgumentsOfType(GraphQLUpload, info)
+        t.is(X[0].name, 'upload')
 
         return resolve()
       },
@@ -244,8 +245,8 @@ test('Is GraphQLUpload List type', async t => {
   const middleware = {
     Query: {
       test: async (resolve, parent, args, ctx, info) => {
-        const X = findArgumentsOfType(GraphQLUpload, info, args)
-        t.is(X[0].argumentName, 'upload')
+        const X = findArgumentsOfType(GraphQLUpload, info)
+        t.is(X[0].name, 'upload')
 
         return resolve()
       },
@@ -267,7 +268,7 @@ test('Is GraphQLUpload List type', async t => {
 })
 
 test('Identifies GraphQLUpload type correctly', async t => {
-  t.plan(2)
+  t.plan(3)
 
   const typeDefs = `
     scalar Upload
@@ -287,11 +288,9 @@ test('Identifies GraphQLUpload type correctly', async t => {
   const middleware = {
     Query: {
       test: async (resolve, parent, args, ctx, info) => {
-        const res = findArgumentsOfType(GraphQLUpload, info, args)
-        t.deepEqual(res[0], {
-          argumentName: 'pass',
-          argumentValue: undefined,
-        })
+        const res = findArgumentsOfType(GraphQLUpload, info)
+        t.is(res[0].name, 'pass')
+        t.is(getArgumentValue(args, res[0]), undefined)
 
         return resolve()
       },
@@ -312,20 +311,6 @@ test('Identifies GraphQLUpload type correctly', async t => {
   t.is(res.data.test, 'pass')
 })
 
-test('Normalizes response correctly', async t => {
-  const res = reinjectArguments({ arg1: 'X', arg2: 'Z', arg3: 'A' },
-  [
-    { argumentName: 'arg1', newArgumentValue: { value: 'x' } },
-    { argumentName: 'arg2', newArgumentValue: { value: 'z' } },
-  ])
-
-  t.deepEqual(res, {
-    arg1: { value: 'x' },
-    arg2: { value: 'z' },
-    arg3: 'A'
-  })
-})
-
 test('Processor handles single file correctly', async t => {
   const uploadHandler = ({ stream, filename, mimetype, encoding }) =>
     new Promise(resolve =>
@@ -335,17 +320,17 @@ test('Processor handles single file correctly', async t => {
       ),
     )
 
-  const res = await processor(uploadHandler)({
-    argumentName: 'test',
-    argumentValue: new Promise(resolve =>
+  let args = {
+    test: new Promise(resolve =>
       resolve({ stream: 's', filename: 'f', mimetype: 'm', encoding: 'e' }),
-    ),
+    )
+  }
+  const res = await makeArgumentTransform(uploadHandler, {}, args, {}, {})({
+    name: 'test',
+    type: GraphQLUpload,
   })
 
-  t.deepEqual(res, {
-    argumentName: 'test',
-    newArgumentValue: 'sfme',
-  })
+  t.deepEqual(res, ['test', 'sfme'])
 })
 
 test('Processor handles multiple files correctly', async t => {
@@ -367,15 +352,15 @@ test('Processor handles multiple files correctly', async t => {
       }),
     )
 
-  const res = await processor(uploadHandler)({
-    argumentName: 'test',
-    argumentValue: [file(1), file(2)],
+  const args = {
+    test: [file(1), file(2)]
+  }
+  const res = await makeArgumentTransform(uploadHandler, {}, args, {}, {})({
+    name: 'test',
+    type: new GraphQLList(GraphQLUpload),
   })
 
-  t.deepEqual(res, {
-    argumentName: 'test',
-    newArgumentValue: ['s1f1m1e1', 's2f2m2e2'],
-  })
+  t.deepEqual(res, ['test', ['s1f1m1e1', 's2f2m2e2']])
 })
 
 test('Processor handles empty files correctly', async t => {
@@ -397,15 +382,15 @@ test('Processor handles empty files correctly', async t => {
       }),
     )
 
-  const res = await processor(uploadHandler)({
-    argumentName: 'test',
-    argumentValue: [file(1), null, undefined],
+  const args = {
+    test: [file(1), null, undefined]
+  }
+  const res = await makeArgumentTransform(uploadHandler, {}, args, {}, {})({
+    name: 'test',
+    type: new GraphQLList(GraphQLUpload),
   })
 
-  t.deepEqual(res, {
-    argumentName: 'test',
-    newArgumentValue: ['s1f1m1e1'],
-  })
+  t.deepEqual(res, ['test', ['s1f1m1e1']])
 })
 
 test('Processor handles no file correctly', async t => {
@@ -416,10 +401,12 @@ test('Processor handles no file correctly', async t => {
         10,
       ),
     )
-
-  const res = await processor(uploadHandler)({
-    argumentName: 'test',
-    argumentValue: null,
+  const args = {
+    test: null
+  }
+  const res = await makeArgumentTransform(uploadHandler, {}, args, {}, {})({
+    name: 'test',
+    type: GraphQLString,
   })
 
   t.is(res, null)
