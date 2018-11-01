@@ -10,7 +10,7 @@
   "typescript": {
     "definition": "dist/index.d.ts"
   },
-  "repository": "github.com:tgerk/graphql-middleware-typed-arguments",
+  "repository": "https://github.com/tgerk/graphql-middleware-typed-arguments",
   "author": "Tim Gerk <tjgerk@gmail.com>, Matic Zavadlal <matic.zavadlal@gmail.com>",
   "scripts": {
     "prepublish": "npm run test",
