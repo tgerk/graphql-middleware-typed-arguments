@@ -4,13 +4,17 @@ import { applyMiddleware } from 'graphql-middleware'
 import { GraphQLUpload } from 'apollo-upload-server'
 import { graphql, GraphQLString } from 'graphql'
 import {
-  filterMapFieldArguments,
-  isGraphQLArgumentType,
-  uploadTypeIdentifier,
-  normaliseArguments,
-  processor as uploadPorcessor,
-  IUpload,
+  findArgumentsOfType,
+  reinjectArguments,
+  processor,
 } from '../'
+
+interface IUpload {
+  stream: string
+  filename: string
+  mimetype: string
+  encoding: string
+}
 
 // Helpers
 
@@ -19,7 +23,6 @@ import {
 test('Finds Argument With Type', async t => {
   t.plan(2)
 
-  // Schema
   const typeDefs = `
     type Query {
       test(string: String, boolean: Boolean!): String!
@@ -32,46 +35,34 @@ test('Finds Argument With Type', async t => {
     },
   }
 
-  // Middleware
-  const processor = arg => {
-    if (isGraphQLArgumentType(GraphQLString, arg)) {
-      t.pass()
-      return 'pass'
-    } else {
-      return null
-    }
-  }
-
   const middleware = {
     Query: {
       test: async (resolve, parent, args, ctx, info) => {
-        filterMapFieldArguments(processor, info, args)
+        const X = findArgumentsOfType(GraphQLString, info, args)
+        t.is(X.length, 1)
 
         return resolve()
       },
     },
   }
 
-  // Schema with Middleware
   const schema = makeExecutableSchema({ typeDefs, resolvers })
   const schemaWithMiddleware = applyMiddleware(schema, middleware)
 
-  // Execution
   const query = `
     query {
       test(string: "trigger", boolean: true)
     }
   `
 
+  // Execution
   const res = await graphql(schema, query)
-
   t.is(res.data.test, 'pass')
 })
 
 test(`Doesn't find Argument With Type`, async t => {
-  t.plan(1)
+  t.plan(2)
 
-  // Schema
   const typeDefs = `
     type Query {
       test(b1: Boolean!, b2: Boolean!): String!
@@ -80,50 +71,38 @@ test(`Doesn't find Argument With Type`, async t => {
 
   const resolvers = {
     Query: {
-      test: (parent, args, ctx, infp) => 'pass',
+      test: (parent, args, ctx, info) => 'pass',
     },
-  }
-
-  // Middleware
-  const processor = arg => {
-    if (isGraphQLArgumentType(GraphQLString, arg)) {
-      t.pass()
-      return 'pass'
-    } else {
-      return null
-    }
   }
 
   const middleware = {
     Query: {
       test: async (resolve, parent, args, ctx, info) => {
-        filterMapFieldArguments(processor, info, args)
+        const X = findArgumentsOfType(GraphQLString, info, args)
+        t.is(X.length, 0)
 
         return resolve()
       },
     },
   }
 
-  // Schema with Middleware
   const schema = makeExecutableSchema({ typeDefs, resolvers })
   const schemaWithMiddleware = applyMiddleware(schema, middleware)
 
-  // Execution
   const query = `
     query {
       test(b1: false, b2: true)
     }
   `
 
+  // Execution
   const res = await graphql(schema, query)
-
   t.is(res.data.test, 'pass')
 })
 
 test('Finds Argument With List Type', async t => {
   t.plan(2)
 
-  // Schema
   const typeDefs = `
     type Query {
       test(strings: [String]!, boolean: Boolean!): String!
@@ -136,46 +115,34 @@ test('Finds Argument With List Type', async t => {
     },
   }
 
-  // Middleware
-  const processor = arg => {
-    if (isGraphQLArgumentType(GraphQLString, arg)) {
-      t.pass()
-      return 'pass'
-    } else {
-      return null
-    }
-  }
-
   const middleware = {
     Query: {
       test: async (resolve, parent, args, ctx, info) => {
-        filterMapFieldArguments(processor, info, args)
+        const X = findArgumentsOfType(GraphQLString, info, args)
+        t.is(X.length, 1)
 
         return resolve()
       },
     },
   }
 
-  // Schema with Middleware
   const schema = makeExecutableSchema({ typeDefs, resolvers })
   const schemaWithMiddleware = applyMiddleware(schema, middleware)
 
-  // Execution
   const query = `
     query {
       test(strings: ["trigger"], boolean: true)
     }
   `
 
+  // Execution
   const res = await graphql(schema, query)
-
   t.is(res.data.test, 'pass')
 })
 
 test('Values in processor match', async t => {
   t.plan(2)
 
-  // Schema
   const typeDefs = `
     type Query {
       test(string: String!): String!
@@ -188,89 +155,34 @@ test('Values in processor match', async t => {
     },
   }
 
-  // Middleware
-  const processor = (def, value) => {
-    t.is(value, 'trigger')
-  }
-
   const middleware = {
     Query: {
       test: async (resolve, parent, args, ctx, info) => {
-        filterMapFieldArguments(processor, info, args)
+        const X = findArgumentsOfType(GraphQLString, info, args)
+        t.is(X[0].argumentValue, 'trigger')
 
         return resolve()
       },
     },
   }
 
-  // Schema with Middleware
   const schema = makeExecutableSchema({ typeDefs, resolvers })
   const schemaWithMiddleware = applyMiddleware(schema, middleware)
 
-  // Execution
   const query = `
     query {
       test(string: "trigger")
     }
   `
 
-  const res = await graphql(schema, query)
-
-  t.is(res.data.test, 'pass')
-})
-
-test('Processed values match', async t => {
-  t.plan(2)
-
-  // Schema
-  const typeDefs = `
-    type Query {
-      test(string: String!): String!
-    }
-  `
-
-  const resolvers = {
-    Query: {
-      test: (parent, args, ctx, infp) => 'pass',
-    },
-  }
-
-  // Middleware
-  const processor = (def, value) => {
-    return 'works'
-  }
-
-  const middleware = {
-    Query: {
-      test: async (resolve, parent, args, ctx, info) => {
-        const res = filterMapFieldArguments(processor, info, args)
-        t.is(res[0], 'works')
-
-        return resolve()
-      },
-    },
-  }
-
-  // Schema with Middleware
-  const schema = makeExecutableSchema({ typeDefs, resolvers })
-  const schemaWithMiddleware = applyMiddleware(schema, middleware)
-
   // Execution
-  const query = `
-    query {
-      test(string: "trigger")
-    }
-  `
-
   const res = await graphql(schema, query)
-
   t.is(res.data.test, 'pass')
 })
 
 test('Is GraphQLUpload type', async t => {
   t.plan(2)
 
-  // Schema
   const typeDefs = `
     scalar Upload
 
@@ -286,45 +198,34 @@ test('Is GraphQLUpload type', async t => {
     Upload: GraphQLUpload,
   }
 
-  // Middleware
-  const processor = arg => {
-    if (isGraphQLArgumentType(GraphQLUpload, arg)) {
-      t.pass()
-    }
-
-    return null
-  }
-
   const middleware = {
     Query: {
       test: async (resolve, parent, args, ctx, info) => {
-        filterMapFieldArguments(processor, info, args)
+        const X = findArgumentsOfType(GraphQLUpload, info, args)
+        t.is(X[0].argumentName, 'upload')
 
         return resolve()
       },
     },
   }
 
-  // Schema with Middleware
   const schema = makeExecutableSchema({ typeDefs, resolvers })
   const schemaWithMiddleware = applyMiddleware(schema, middleware)
 
-  // Execution
   const query = `
     query {
       test
     }
   `
 
+  // Execution
   const res = await graphql(schema, query)
-
   t.is(res.data.test, 'pass')
 })
 
 test('Is GraphQLUpload List type', async t => {
   t.plan(2)
 
-  // Schema
   const typeDefs = `
     scalar Upload
 
@@ -340,45 +241,34 @@ test('Is GraphQLUpload List type', async t => {
     Upload: GraphQLUpload,
   }
 
-  // Middleware
-  const processor = arg => {
-    if (isGraphQLArgumentType(GraphQLUpload, arg)) {
-      t.pass()
-    }
-
-    return null
-  }
-
   const middleware = {
     Query: {
       test: async (resolve, parent, args, ctx, info) => {
-        filterMapFieldArguments(processor, info, args)
+        const X = findArgumentsOfType(GraphQLUpload, info, args)
+        t.is(X[0].argumentName, 'upload')
 
         return resolve()
       },
     },
   }
 
-  // Schema with Middleware
   const schema = makeExecutableSchema({ typeDefs, resolvers })
   const schemaWithMiddleware = applyMiddleware(schema, middleware)
 
-  // Execution
   const query = `
     query {
       test
     }
   `
 
+  // Execution
   const res = await graphql(schema, query)
-
   t.is(res.data.test, 'pass')
 })
 
 test('Identifies GraphQLUpload type correctly', async t => {
   t.plan(2)
 
-  // Schema
   const typeDefs = `
     scalar Upload
 
@@ -394,15 +284,13 @@ test('Identifies GraphQLUpload type correctly', async t => {
     Upload: GraphQLUpload,
   }
 
-  // Middleware
-
   const middleware = {
     Query: {
       test: async (resolve, parent, args, ctx, info) => {
-        const res = filterMapFieldArguments(uploadTypeIdentifier, info, args)
+        const res = findArgumentsOfType(GraphQLUpload, info, args)
         t.deepEqual(res[0], {
           argumentName: 'pass',
-          upload: undefined,
+          argumentValue: undefined,
         })
 
         return resolve()
@@ -410,31 +298,31 @@ test('Identifies GraphQLUpload type correctly', async t => {
     },
   }
 
-  // Schema with Middleware
   const schema = makeExecutableSchema({ typeDefs, resolvers })
   const schemaWithMiddleware = applyMiddleware(schema, middleware)
 
-  // Execution
   const query = `
     query {
       test
     }
   `
 
+  // Execution
   const res = await graphql(schema, query)
-
   t.is(res.data.test, 'pass')
 })
 
 test('Normalizes response correctly', async t => {
-  const res = normaliseArguments([
-    { argumentName: 'arg1', upload: { value: 'x' } },
-    { argumentName: 'arg2', upload: { value: 'z' } },
+  const res = reinjectArguments({ arg1: 'X', arg2: 'Z', arg3: 'A' },
+  [
+    { argumentName: 'arg1', newArgumentValue: { value: 'x' } },
+    { argumentName: 'arg2', newArgumentValue: { value: 'z' } },
   ])
 
   t.deepEqual(res, {
     arg1: { value: 'x' },
     arg2: { value: 'z' },
+    arg3: 'A'
   })
 })
 
@@ -447,16 +335,16 @@ test('Processor handles single file correctly', async t => {
       ),
     )
 
-  const res = await uploadPorcessor(uploadHandler)({
+  const res = await processor(uploadHandler)({
     argumentName: 'test',
-    upload: new Promise(resolve =>
+    argumentValue: new Promise(resolve =>
       resolve({ stream: 's', filename: 'f', mimetype: 'm', encoding: 'e' }),
     ),
   })
 
   t.deepEqual(res, {
     argumentName: 'test',
-    upload: 'sfme',
+    newArgumentValue: 'sfme',
   })
 })
 
@@ -479,14 +367,14 @@ test('Processor handles multiple files correctly', async t => {
       }),
     )
 
-  const res = await uploadPorcessor(uploadHandler)({
+  const res = await processor(uploadHandler)({
     argumentName: 'test',
-    upload: [file(1), file(2)],
+    argumentValue: [file(1), file(2)],
   })
 
   t.deepEqual(res, {
     argumentName: 'test',
-    upload: ['s1f1m1e1', 's2f2m2e2'],
+    newArgumentValue: ['s1f1m1e1', 's2f2m2e2'],
   })
 })
 
@@ -509,14 +397,14 @@ test('Processor handles empty files correctly', async t => {
       }),
     )
 
-  const res = await uploadPorcessor(uploadHandler)({
+  const res = await processor(uploadHandler)({
     argumentName: 'test',
-    upload: [file(1), null, undefined],
+    argumentValue: [file(1), null, undefined],
   })
 
   t.deepEqual(res, {
     argumentName: 'test',
-    upload: ['s1f1m1e1'],
+    newArgumentValue: ['s1f1m1e1'],
   })
 })
 
@@ -529,9 +417,9 @@ test('Processor handles no file correctly', async t => {
       ),
     )
 
-  const res = await uploadPorcessor(uploadHandler)({
+  const res = await processor(uploadHandler)({
     argumentName: 'test',
-    upload: null,
+    argumentValue: null,
   })
 
   t.is(res, null)

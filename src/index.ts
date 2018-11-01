@@ -8,9 +8,29 @@ import {
 import { GraphQLUpload } from 'apollo-upload-server'
 import { IMiddlewareFunction } from 'graphql-middleware'
 
-// GraphQL -------------------------------------------------------------------
-
 type Maybe<T> = T | null
+
+/**
+ *
+ * @param f
+ * @param xs
+ *
+ * applies a map function to each member of an array
+ * returns non-null result as a new array
+ *
+ */
+function filterMap<T, U>(f: (x: T) => Maybe<U>, xs: T[]): U[] {
+  return xs.reduce((acc, x) => {
+    const res = f(x)
+    if (res !== null) {
+      return [res, ...acc]
+    } else {
+      return acc
+    }
+  }, [])
+}
+
+// GraphQL info mining -------------------------------------------------------
 
 /**
  *
@@ -43,26 +63,6 @@ function getFieldArguments<TSource, TContext, TArgs>(
 
 /**
  *
- * @param f
- * @param xs
- *
- * Maps an array of functions and filters out the values
- * which converted to null.
- *
- */
-function filterMap<T, U>(f: (x: T) => Maybe<U>, xs: T[]): U[] {
-  return xs.reduce((acc, x) => {
-    const res = f(x)
-    if (res !== null) {
-      return [res, ...acc]
-    } else {
-      return acc
-    }
-  }, [])
-}
-
-/**
- *
  * @param args
  * @param arg
  *
@@ -80,82 +80,107 @@ function getArgumentValue(args: { [key: string]: any }, arg: GraphQLArgument) {
  * @param info
  * @param args
  *
- * Executes a funcition on all arguments of a particular field
- * and filters out the results which returned null.
+ * Executes a function on all arguments and their values of the current field
+ * returns an array of the function's results if not null
  *
  */
-export function filterMapFieldArguments<T>(
-  f: (definition: GraphQLArgument, arg: any) => Maybe<T>,
+export function findArgumentsOfType<V>(
+  type: GraphQLType,
   info: GraphQLResolveInfo,
-  args: { [key: string]: any },
-): T[] {
+  args: { [key: string]: any }, // some args have type V | V[] | Promise<V> | Promise<V>[], and we are here to find them
+): ITypeArgument<V>[] {
+  const argSelector = (argDef: GraphQLArgument): Maybe<ITypeArgument<V>> => {
+    if (getNamedType(argDef.type).name === getNamedType(type).name) {
+      return {
+        argumentName: argDef.name,
+        argumentValue: getArgumentValue(args, argDef),
+      }
+    }
+
+    return null
+  }
+
   const field = getResolverField(info)
   const fieldArguments = getFieldArguments(field)
+  return filterMap(argSelector, fieldArguments)
+}
 
-  const fWithArguments = arg => f(arg, getArgumentValue(args, arg))
+// Argument detection and modificaton ----------------------------------------
 
-  return filterMap(fWithArguments, fieldArguments)
+interface IConfig<V, T> {
+  type: GraphQLType
+  handler: ITypeArgumentHandler<V, T>
+}
+
+interface ITypeArgument<V> {
+  argumentName: string
+  argumentValue: V | Promise<V> | Array<V | Promise<V>>
+}
+
+declare type ITypeArgumentHandler<V, T> = (value: V | Promise<V>) => Promise<T>
+
+interface ITypeArgumentHandled<T> {
+  argumentName: string
+  newArgumentValue: T | T[]
 }
 
 /**
  *
- * @param type
- * @param x
+ * @param handler
  *
- * Checks whether a certain non-nullable, list or regular type
- * is of predicted type.
- *
- */
-export function isGraphQLArgumentType(
-  type: GraphQLType,
-  argument: GraphQLArgument,
-): boolean {
-  return getNamedType(argument.type).name === getNamedType(type).name
-}
-
-// Upload --------------------------------------------------------------------
-
-export interface IUpload {
-  stream: string
-  filename: string
-  mimetype: string
-  encoding: string
-}
-
-interface IUploadArgument {
-  argumentName: string
-  upload: Promise<IUpload> | Promise<IUpload>[]
-}
-
-interface IProcessedUploadArgument<T> {
-  argumentName: string
-  upload: T | T[]
-}
-
-declare type IUploadHandler<T> = (upload: IUpload) => Promise<T>
-
-interface IConfig<T> {
-  uploadHandler: IUploadHandler<T>
-}
-
-/**
- *
- * @param def
- * @param value
- *
- * Funciton used to identify GraphQLUpload arguments.
+ * Higher-order function that produces a function which applies handler to appropriate way
+ * to array or scalar, promise or not.
+ * apollo-upload-server has provided promises referring to sections of a multipart request
+ * for arguments of type GraphQLUpdate, any other argument types may not be a "thenable",
+ * just use Promise.resolve(handler(value))
+ * Returns a promise or array of promises for the transfigured argument value.
  *
  */
-export function uploadTypeIdentifier(
-  def: GraphQLArgument,
-  value: any,
-): IUploadArgument {
-  if (isGraphQLArgumentType(GraphQLUpload, def)) {
-    return {
-      argumentName: def.name,
-      upload: value,
+export function processor<T, V>(handler: ITypeArgumentHandler<V, T>) {
+  return function({
+    argumentName,
+    argumentValue,
+  }: ITypeArgument<V>): Maybe<Promise<ITypeArgumentHandled<T>>> {
+    if (Array.isArray(argumentValue)) {
+      return Promise.all(
+        argumentValue.reduce(
+          (acc: Array<Promise<T>>, elem: V | Promise<V>): Array<Promise<T>> => {
+            if (elem !== undefined && elem !== null) {
+              if (elem instanceof Promise) {
+                return [...acc, elem.then(handler)]
+              }
+              return [...acc, Promise.resolve(handler(elem))]
+            }
+            return acc
+          },
+          [],
+        ),
+      ).then(
+        (res: T[]): ITypeArgumentHandled<T> => ({
+          argumentName: argumentName,
+          newArgumentValue: res,
+        }),
+      )
     }
-  } else {
+
+    if (argumentValue !== undefined && argumentValue !== null) {
+      if (argumentValue instanceof Promise) {
+        return argumentValue.then(handler).then(
+          (res: T): ITypeArgumentHandled<T> => ({
+            argumentName: argumentName,
+            newArgumentValue: res,
+          }),
+        )
+      }
+
+      return Promise.resolve(handler(argumentValue)).then(
+        (res: T): ITypeArgumentHandled<T> => ({
+          argumentName: argumentName,
+          newArgumentValue: res,
+        }),
+      )
+    }
+
     return null
   }
 }
@@ -163,98 +188,46 @@ export function uploadTypeIdentifier(
 /**
  *
  * @param args
- * @param info
+ * @param handledArgs
  *
- * Function used to extract GraphQLUpload argumetns from a field.
+ * Replaces inital argument values with their transformations
  *
  */
-function extractUploadArguments(
+export function reinjectArguments<T>(
   args: { [key: string]: any },
-  info: GraphQLResolveInfo,
-): IUploadArgument[] {
-  return filterMapFieldArguments(uploadTypeIdentifier, info, args)
-}
-
-/**
- *
- * @param arr
- *
- * Converts an array of processed uploads to one object which can
- * be later used as arguments definition.
- *
- */
-export function normaliseArguments<T>(
-  args: IProcessedUploadArgument<T>[],
-): { [key: string]: T } {
-  return args.reduce((acc, val) => {
-    return {
-      ...acc,
-      [val.argumentName]: val.upload,
-    }
-  }, {})
-}
-
-/**
- *
- * @param uploadHandler
- *
- * Function used to process file uploads.
- *
- */
-export function processor<T>(uploadHandler: IUploadHandler<T>) {
-  return function({
-    argumentName,
-    upload,
-  }: IUploadArgument): Maybe<Promise<IProcessedUploadArgument<T>>> {
-    if (Array.isArray(upload)) {
-      const uploads = upload.reduce((acc, file) => {
-        if (file !== undefined && file !== null && file.then) {
-          return [...acc, file.then(uploadHandler)]
-        } else {
-          return acc
-        }
-      }, [])
-
-      return Promise.all(uploads).then(res => ({
-        argumentName: argumentName,
-        upload: res,
-      }))
-    } else if (upload !== undefined && upload !== null && upload.then) {
-      return upload.then(uploadHandler).then(res => ({
-        argumentName: argumentName,
-        upload: res,
-      }))
-    } else {
-      return null
-    }
-  }
+  handledArgs: ITypeArgumentHandled<T>[],
+): { [key: string]: any } {
+  const newArgs = handledArgs.reduce(
+    (acc, val) => ({ ...acc, [val.argumentName]: val.newArgumentValue }),
+    {},
+  )
+  return { ...args, ...newArgs }
 }
 
 /**
  *
  * @param config
  *
- * Exposed upload function which handles file upload in resolvers.
- * Internally, it returns a middleware function which is later processed
- * by GraphQL Middleware.
- * The first step is to extract upload arguments using identifier
- * which can be found above.
- * Once we found all the GraphQLUpload arguments we check whether they
- * carry a value or not and return a Promise to resolve them.
- * Once Promises get processed we normalise outputs and merge them
- * with old arguments to replace the old values with the new ones.
+ * A higher-order function which produces a middleware resolver to process
+ * input arguments of a given type.  We find all argument values of `type`,
+ * which may already be then-able promises.  We either add a "then(handler)"
+ * or create a new promise resolved to handler(value).  Results replace their
+ * starting values in the arguments object passed to the next resolver.
  *
  */
-export function upload<T>({ uploadHandler }: IConfig<T>): IMiddlewareFunction {
-  return async (resolve, parent, args, ctx, info) => {
-    const uploadArguments = extractUploadArguments(args, info)
-    const uploads = filterMap(processor(uploadHandler), uploadArguments)
+export function processTypeArgs<V, T>({
+  type,
+  handler,
+}: IConfig<V, T>): IMiddlewareFunction {
+  return (resolve, parent, args, ctx, info) => {
+    const typeArgs = findArgumentsOfType(type, info, args)
 
-    const uploaded = await Promise.all(uploads)
-    const argsUploaded = normaliseArguments(uploaded)
+    if (typeArgs.length) {
+      return Promise.all(filterMap(processor(handler), typeArgs))
+        .then(handledArgs => reinjectArguments(args, handledArgs))
+        .then(updatedArgs => resolve(parent, updatedArgs, ctx, info))
+    }
 
-    const argsWithUploads = { ...args, ...argsUploaded }
-
-    return resolve(parent, argsWithUploads, ctx, info)
+    return resolve(parent, args, ctx, info)
   }
 }
