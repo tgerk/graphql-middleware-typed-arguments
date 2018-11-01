@@ -185,9 +185,10 @@ export function processTypeArgs<V, T>({
   return (resolve, parent, args, ctx, info) => {
     const argDefs = findArgumentsOfType(type, info)
     if (argDefs.length) {
-      // apply argument transform function to arguments of the selected type
-      // the caller's transform function is applied to values that may be embedded in lists and promises
-      // finally the resolver is called with transformed argument values
+      // Apply argument transform function to arguments of the selected type
+      // The caller's transform function is applied to values that may be embedded
+      // in lists and promises, but not to null or undefined values
+      // Finally the resolver is called with transformed argument values
       return (
         Promise.all(
           filterMap(
@@ -208,4 +209,56 @@ export function processTypeArgs<V, T>({
 
     return resolve(parent, args, ctx, info)
   }
+}
+
+export function processArgs({ visitor }): IMiddlewareFunction {
+  return (resolve, parent, args, ctx, info) => {
+    const argDefs = getFieldArguments(info)
+    if (argDefs.length) {
+      // Apply argument transform function to all arguments
+      // The caller's visitor function is applied to values that may be embedded
+      // in lists and promises, but not to null or undefined values
+      // Finally the resolver is called with transformed argument values
+      return (
+        Promise.all(
+          filterMap(
+            makeArgumentTransform(visitor, parent, args, ctx, info),
+            argDefs,
+          ),
+        )
+          // substitute the transformed values into the args object
+          .then(result =>
+            result.reduce(
+              (args, [name, newValue]) => (args[name] = newValue),
+              args,
+            ),
+          )
+          .then(newArgs => resolve(parent, newArgs, ctx, info))
+      )
+    }
+
+    return resolve(parent, args, ctx, info)
+  }
+}
+
+// Preceding revision as a special case --------------------------------------
+
+// this object shape is defined by Apollo Upload Server v5.0.0
+export interface IUploadFile {
+  stream
+  filename
+  mimetype
+  encoding
+}
+
+declare type IUploadHandler<T> = (upload: IUploadFile) => Promise<T>
+
+export interface IUploadConfig<T> {
+  uploadHandler: IUploadHandler<T>
+}
+
+export function update<T>({
+  uploadHandler,
+}: IUploadConfig<T>): IMiddlewareFunction {
+  return processTypeArgs({ type: 'Upload', transform: uploadHandler })
 }
