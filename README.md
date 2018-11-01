@@ -1,6 +1,6 @@
 # graphql-middleware-typed-arguments
 
-GraphQL Middleware Typed Arguments lets you define a processor function to massage, validate, authorize, or whatever your query, mutation, or field arguments of a certain type.  The middleware was originally developed as GraphQL Middleware Apollo Upload Server, which wonderfully separated streaming uploaded media to its ultimate destination from other concerns.
+GraphQL Middleware Typed Arguments lets you define a processor function to massage, validate, authorize, or whatever your query, mutation, or field arguments of a certain type.  The middleware was originally developed as [GraphQL Middleware Apollo Upload Server](https://www.npmjs.com/package/graphql-middleware-apollo-upload-server), which wonderfully separated streaming uploaded media to its ultimate destination from other concerns.
 
 ## Install
 
@@ -20,7 +20,7 @@ npm install graphql-middleware-typed-arguments
 
 ## Demo
 
-The example is taken directly from graphql-middleware-apollo-upload-server which was basis for this generalization.  There are two changes from the original:  the GraphQLUpload type object is imported, but the type name "Upload" could be used as well.  (In fact, type names are simpler way to get at a type defined in SDL.)  The second change is providing the type (object or string) to the middleware factory function provided by this package: `processTypeArgs`.
+The example is taken directly from graphql-middleware-apollo-upload-server which was basis for this generalization.  There are two changes from the original:  the GraphQLUpload type object is imported, but the type name "Upload" could be used as well.  (In fact, type names are simpler way to get at a type defined in SDL.)  The second change is providing the type (object or string) to the middleware factory function provided by this package: `processTypeArgs`.  (The previous version's `upload` method has been preseved and implemented as a special case.)
 
 ```ts
 import { GraphQLServer } from 'graphql-yoga'
