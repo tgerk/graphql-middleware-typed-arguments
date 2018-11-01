@@ -1,6 +1,6 @@
 {
-  "name": "graphql-middleware-apollo-upload-server",
-  "description": "File upload is hard, that's why you need me!",
+  "name": "graphql-middleware-typed-arguments",
+  "description": "Validating and filtering query argument types has been hard, but no more.",
   "version": "0.0.0-semantic-release",
   "files": [
     "dist"
@@ -10,8 +10,8 @@
   "typescript": {
     "definition": "dist/index.d.ts"
   },
-  "repository": "https://github.com/homeroom-live/graphql-middleware-upload",
-  "author": "Matic Zavadlal <matic.zavadlal@gmail.com>",
+  "repository": "github.com:tgerk/graphql-middleware-typed-arguments",
+  "author": "Tim Gerk <tjgerk@gmail.com>, Matic Zavadlal <matic.zavadlal@gmail.com>",
   "scripts": {
     "prepublish": "npm run test",
     "build": "rm -rf dist && tsc -d",
