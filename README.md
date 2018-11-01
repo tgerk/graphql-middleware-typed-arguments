@@ -10,7 +10,7 @@ npm install graphql-middleware-typed-arguments
 
 ## Overview
 
-`graphql-middleware-typed-arguments` lets you wrap a function around field arguments of any type.  The classic example is GraphQLUpload type in conjunction with Apollo Upload Server.  Now, also, you can attach an inspection function to any type of query argument.
+`graphql-middleware-typed-arguments` lets you wrap a function around field arguments of any type.  The classic example is GraphQLUpload type in conjunction with Apollo Upload Server.  Now, also, you can attach an inspection function to any type of query argument, such as complicated validation of telephone numbers or delivery addresses where fields of the input object type depend upon each other in complex ways.  And there's more:  you can also produce middleware to visit all field arguments regardless of type.
 
 ## Features
 
@@ -114,13 +114,22 @@ server.listen(() => {
 ## API
 
 ```ts
-interface IConfig<V, T> {
+interface ITypeConfig<V, T> {
   type: GraphQLType | string
   transform: (value: V, root: any, args: {}, context: any, info: GraphQLResolveInfo) => Promise<T>
 }
 
 export const processTypeArgs<V, T> = (
-  config: IConfig<V, T>
+  config: ITypeConfig<V, T>
+): IMiddleware
+
+interface IConfig {
+  // behave yourself here:  the visitor should change type very carefully, such as dereferencing to validate an ID
+  visitor: (value: any, root: any, args: {}, context: any, info: GraphQLResolveInfo) => Promise<any>
+}
+
+export const visitAllArgs = (
+  config: IConfig
 ): IMiddleware
 
 // input and output types are up to you, just provide the transform function
