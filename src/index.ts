@@ -258,7 +258,7 @@ export interface IUploadConfig<T> {
   uploadHandler: IUploadHandler<T>
 }
 
-export function update<T>({
+export function upload<T>({
   uploadHandler,
 }: IUploadConfig<T>): IMiddlewareFunction {
   return processTypeArgs({ type: 'Upload', transform: uploadHandler })
