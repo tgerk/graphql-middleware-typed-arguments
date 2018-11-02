@@ -115,6 +115,7 @@ export function makeArgumentTransform<T, V>(
       | V
       | Promise<V>
       | Array<V | Promise<V>> = getArgumentValue(args, argumentDef)
+    info.argument = argumentDef
     if (Array.isArray(argumentValue)) {
       return Promise.all(
         argumentValue.reduce(
@@ -211,7 +212,7 @@ export function processTypeArgs<V, T>({
   }
 }
 
-export function processArgs({ visitor }): IMiddlewareFunction {
+export function visitAllArgs({ visitor }): IMiddlewareFunction {
   return (resolve, parent, args, ctx, info) => {
     const argDefs = getFieldArguments(info)
     if (argDefs.length) {

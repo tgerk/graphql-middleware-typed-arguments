@@ -132,6 +132,9 @@ export const visitAllArgs = (
   config: IConfig
 ): IMiddleware
 
+// Note that the visitor and transform functions receive all four resolver args (parent, args, context, & info),
+// For these functions, info.argument has been set to refer to the relevant argument definition.
+
 // input and output types are up to you, just provide the transform function
 interface IFile {
   stream: string
