@@ -1,9 +1,8 @@
 import {
   GraphQLResolveInfo,
   GraphQLArgument,
-  GraphQLField,
   getNamedType,
-  GraphQLType,
+  GraphQLNamedType,
 } from 'graphql'
 import { IMiddlewareFunction } from 'graphql-middleware'
 
@@ -56,15 +55,17 @@ function getFieldArguments(info: GraphQLResolveInfo): GraphQLArgument[] {
  *
  */
 export function findArgumentsOfType(
-  type: string | GraphQLType,
+  type: string | GraphQLNamedType,
   info: GraphQLResolveInfo,
 ): Maybe<GraphQLArgument[]> {
   const fieldArguments = getFieldArguments(info)
   return filterMap((argDef: GraphQLArgument): Maybe<GraphQLArgument> => {
-    if (
-      getNamedType(argDef.type).name ===
-      (typeof type === 'string' ? type : getNamedType(type).name)
-    ) {
+    const argType = getNamedType(argDef.type)
+    if (typeof type === 'string') {
+      if (argType.name === type) {
+        return argDef
+      }
+    } else if (argType.name === type.name) {
       return argDef
     }
 
@@ -167,7 +168,7 @@ export declare type ITypeArgumentHandler<V, T> = (
 ) => Promise<T> // the field resolver expects arg of type T
 
 export interface IConfig<V, T> {
-  type: string | GraphQLType // name of type or type object describing V
+  type: string | GraphQLNamedType // name of type or type object describing V
   transform: ITypeArgumentHandler<V, T> // value transformation function
 }
 
@@ -200,7 +201,7 @@ export function processTypeArgs<V, T>({
           // substitute the transformed values into the args object
           .then(result =>
             result.reduce(
-              (args, [name, newValue]) => (args[name] = newValue),
+              (args, [name, newValue]) => { args[name] = newValue; return args },
               args,
             ),
           )
@@ -242,24 +243,4 @@ export function visitAllArgs({ visitor }): IMiddlewareFunction {
   }
 }
 
-// Preceding revision as a special case --------------------------------------
-
-// this object shape is defined by Apollo Upload Server v5.0.0
-export interface IUploadFile {
-  stream
-  filename
-  mimetype
-  encoding
-}
-
-declare type IUploadHandler<T> = (upload: IUploadFile) => Promise<T>
-
-export interface IUploadConfig<T> {
-  uploadHandler: IUploadHandler<T>
-}
-
-export function upload<T>({
-  uploadHandler,
-}: IUploadConfig<T>): IMiddlewareFunction {
-  return processTypeArgs({ type: 'Upload', transform: uploadHandler })
-}
+export * from './upload'

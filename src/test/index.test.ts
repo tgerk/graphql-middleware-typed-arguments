@@ -2,20 +2,13 @@ import test from 'ava'
 import { makeExecutableSchema } from 'graphql-tools'
 import { applyMiddleware } from 'graphql-middleware'
 import { GraphQLUpload } from 'apollo-upload-server'
-import { graphql, GraphQLList, GraphQLString } from 'graphql'
+import { graphql, GraphQLList, GraphQLString, GraphQLScalarType } from 'graphql'
 import {
   findArgumentsOfType,
   getArgumentValue,
   makeArgumentTransform,
-} from '../'
-
-// this interface traces to busboy file handling, as used by Apollo Upload Server
-interface IUpload {
-  stream: string
-  filename: string
-  mimetype: string
-  encoding: string
-}
+  processTypeArgs,
+} from '../index'
 
 // Helpers
 
@@ -342,7 +335,7 @@ test('Processor handles multiple files correctly', async t => {
       ),
     )
 
-  const file = (x): Promise<IUpload> =>
+  const file = x =>
     new Promise(resolve =>
       resolve({
         stream: `s${x}`,
@@ -372,7 +365,7 @@ test('Processor handles empty files correctly', async t => {
       ),
     )
 
-  const file = (x): Promise<IUpload> =>
+  const file = x =>
     new Promise(resolve =>
       resolve({
         stream: `s${x}`,
@@ -410,4 +403,59 @@ test('Processor handles no file correctly', async t => {
   })
 
   t.is(res, null)
+})
+
+test('processTypeArgs applies a transformations correctly', async t => {
+  // write a schema, an arg transform, and a query
+  t.plan(5)
+
+  let theValue = "some-random-string"
+
+  const typeDefs = `
+    scalar Custom
+
+    type Query {
+      test(pass: Custom): [String]!
+    }
+  `
+
+  const resolvers = {
+    Query: {
+      test: (parent, args, ctx, infp) => {
+        t.deepEqual(args, { pass: String('-'+theValue+'-').toUpperCase() })
+        return String(args.pass).split('-')
+      }
+    },
+    Custom: new GraphQLScalarType({
+      name: 'Custom',
+      serialize: x => x,
+      parseValue: x => x,
+      parseLiteral: x => {
+        t.is(x['value'], theValue); return `-${x['value']}-`
+      }
+    }),
+  }
+
+  const middleware = {
+    Query: {
+      test: processTypeArgs({ type: 'Custom', transform: x=> {
+        t.is(x, '-'+theValue+'-');
+        return Promise.resolve(String(x).toUpperCase())
+      }})
+    },
+  }
+
+  const schema = makeExecutableSchema({ typeDefs, resolvers })
+  const schemaWithMiddleware = applyMiddleware(schema, middleware)
+
+  const query = `
+    query {
+      test(pass: "${theValue}")
+    }
+  `
+
+  // Execution
+  const res = await graphql(schema, query)
+  console.log(res)
+  t.deepEqual(res.data.test, String('-'+theValue+'-').toUpperCase().split('-'))
 })
