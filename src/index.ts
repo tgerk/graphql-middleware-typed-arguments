@@ -90,7 +90,7 @@ export function getArgumentValue(
 
 // Helper --------------------------------------------------------------------
 
-declare type IHandledArg<T> = [string, T | T[]]
+declare type IHandledArg<T> = { [key: string]: T | T[] }
 
 /**
  *
@@ -137,19 +137,19 @@ export function makeArgumentTransform<T, V>(
           },
           [],
         ),
-      ).then((res: T[]): IHandledArg<T> => [argumentName, res])
+      ).then((newValue: T[]): IHandledArg<T> => ({ [argumentName]: newValue }))
     }
 
     if (argumentValue !== undefined && argumentValue !== null) {
       if (argumentValue instanceof Promise) {
         return argumentValue
           .then(e => transform(e, parent, args, ctx, info))
-          .then((res: T): IHandledArg<T> => [argumentName, res])
+          .then((newValue: T): IHandledArg<T> => ({ [argumentName]: newValue }))
       }
 
       return Promise.resolve(
         transform(argumentValue, parent, args, ctx, info),
-      ).then((res: T): IHandledArg<T> => [argumentName, res])
+      ).then((newValue: T): IHandledArg<T> => ({ [argumentName]: newValue }))
     }
 
     return null // exclude arguments when no value provided
@@ -199,11 +199,8 @@ export function processTypeArgs<V, T>({
           ),
         )
           // substitute the transformed values into the args object
-          .then(result =>
-            result.reduce(
-              (args, [name, newValue]) => { args[name] = newValue; return args },
-              args,
-            ),
+          .then(newArgs =>
+            newArgs.reduce((args, newArg) => ({ ...args, ...newArg }), args),
           )
           .then(newArgs => resolve(parent, newArgs, ctx, info))
       )
@@ -213,27 +210,24 @@ export function processTypeArgs<V, T>({
   }
 }
 
-export function visitAllArgs({ visitor }): IMiddlewareFunction {
+export function visitAllArgs({ transform }): IMiddlewareFunction {
   return (resolve, parent, args, ctx, info) => {
     const argDefs = getFieldArguments(info)
     if (argDefs.length) {
       // Apply argument transform function to all arguments
-      // The caller's visitor function is applied to values that may be embedded
+      // The caller's transform function is applied to values that may be embedded
       // in lists and promises, but not to null or undefined values
       // Finally the resolver is called with transformed argument values
       return (
         Promise.all(
           filterMap(
-            makeArgumentTransform(visitor, parent, args, ctx, info),
+            makeArgumentTransform(transform, parent, args, ctx, info),
             argDefs,
           ),
         )
           // substitute the transformed values into the args object
-          .then(result =>
-            result.reduce(
-              (args, [name, newValue]) => (args[name] = newValue),
-              args,
-            ),
+          .then(newArgs =>
+            newArgs.reduce((args, newArg) => ({ ...args, ...newArg }), args),
           )
           .then(newArgs => resolve(parent, newArgs, ctx, info))
       )

@@ -1,7 +1,7 @@
 import test from 'ava'
 import { makeExecutableSchema } from 'graphql-tools'
 import { applyMiddleware } from 'graphql-middleware'
-import { GraphQLUpload } from 'apollo-upload-server'
+import { GraphQLUpload } from 'graphql-upload'
 import { graphql, GraphQLList, GraphQLString, GraphQLScalarType } from 'graphql'
 import {
   findArgumentsOfType,
@@ -316,14 +316,14 @@ test('Processor handles single file correctly', async t => {
   let args = {
     test: new Promise(resolve =>
       resolve({ stream: 's', filename: 'f', mimetype: 'm', encoding: 'e' }),
-    )
+    ),
   }
   const res = await makeArgumentTransform(uploadHandler, {}, args, {}, {})({
     name: 'test',
     type: GraphQLUpload,
   })
 
-  t.deepEqual(res, ['test', 'sfme'])
+  t.deepEqual(res, { test: 'sfme' })
 })
 
 test('Processor handles multiple files correctly', async t => {
@@ -346,14 +346,14 @@ test('Processor handles multiple files correctly', async t => {
     )
 
   const args = {
-    test: [file(1), file(2)]
+    test: [file(1), file(2)],
   }
   const res = await makeArgumentTransform(uploadHandler, {}, args, {}, {})({
     name: 'test',
     type: new GraphQLList(GraphQLUpload),
   })
 
-  t.deepEqual(res, ['test', ['s1f1m1e1', 's2f2m2e2']])
+  t.deepEqual(res, { test: ['s1f1m1e1', 's2f2m2e2'] })
 })
 
 test('Processor handles empty files correctly', async t => {
@@ -376,14 +376,14 @@ test('Processor handles empty files correctly', async t => {
     )
 
   const args = {
-    test: [file(1), null, undefined]
+    test: [file(1), null, undefined],
   }
   const res = await makeArgumentTransform(uploadHandler, {}, args, {}, {})({
     name: 'test',
     type: new GraphQLList(GraphQLUpload),
   })
 
-  t.deepEqual(res, ['test', ['s1f1m1e1']])
+  t.deepEqual(res, { test: ['s1f1m1e1'] })
 })
 
 test('Processor handles no file correctly', async t => {
@@ -395,7 +395,7 @@ test('Processor handles no file correctly', async t => {
       ),
     )
   const args = {
-    test: null
+    test: null,
   }
   const res = await makeArgumentTransform(uploadHandler, {}, args, {}, {})({
     name: 'test',
@@ -405,11 +405,11 @@ test('Processor handles no file correctly', async t => {
   t.is(res, null)
 })
 
-test('processTypeArgs applies a transformations correctly', async t => {
+test('processTypeArgs applies a transformation correctly', async t => {
   // write a schema, an arg transform, and a query
   t.plan(5)
 
-  let theValue = "some-random-string"
+  let theValue = 'some-random-string'
 
   const typeDefs = `
     scalar Custom
@@ -422,26 +422,30 @@ test('processTypeArgs applies a transformations correctly', async t => {
   const resolvers = {
     Query: {
       test: (parent, args, ctx, infp) => {
-        t.deepEqual(args, { pass: String('-'+theValue+'-').toUpperCase() })
+        t.deepEqual(args, { pass: String('-' + theValue + '-').toUpperCase() })
         return String(args.pass).split('-')
-      }
+      },
     },
     Custom: new GraphQLScalarType({
       name: 'Custom',
       serialize: x => x,
       parseValue: x => x,
       parseLiteral: x => {
-        t.is(x['value'], theValue); return `-${x['value']}-`
-      }
+        t.is(x['value'], theValue)
+        return `-${x['value']}-`
+      },
     }),
   }
 
   const middleware = {
     Query: {
-      test: processTypeArgs({ type: 'Custom', transform: x=> {
-        t.is(x, '-'+theValue+'-');
-        return Promise.resolve(String(x).toUpperCase())
-      }})
+      test: processTypeArgs({
+        type: 'Custom',
+        transform: x => {
+          t.is(x, '-' + theValue + '-')
+          return Promise.resolve(String(x).toUpperCase())
+        },
+      }),
     },
   }
 
@@ -456,6 +460,10 @@ test('processTypeArgs applies a transformations correctly', async t => {
 
   // Execution
   const res = await graphql(schema, query)
-  console.log(res)
-  t.deepEqual(res.data.test, String('-'+theValue+'-').toUpperCase().split('-'))
+  t.deepEqual(
+    res.data.test,
+    String('-' + theValue + '-')
+      .toUpperCase()
+      .split('-'),
+  )
 })

@@ -1,4 +1,4 @@
-import { GraphQLUpload } from 'apollo-upload-server'
+import { GraphQLUpload } from 'graphql-upload'
 import { processTypeArgs } from './index'
 import { IMiddlewareFunction } from 'graphql-middleware'
 
