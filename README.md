@@ -18,6 +18,10 @@ npm install graphql-middleware-typed-arguments
 - 🛴 Half automatic.
 - 🏆 Works with every GraphQL server.
 
+## Notes
+
+If you would appreciate an integration of the [Yup validation framework](https://github.com/jquense/yup) to validate your scalar and object-type arguments, look at [this package](https://www.npmjs.com/package/graphql-yup-middleware).
+
 ## Demo
 
 The example is taken directly from graphql-middleware-apollo-upload-server which was basis for this generalization.  There are two changes from the original:  the GraphQLUpload type object is imported, but the type name "Upload" could be used as well.  (In fact, type names are simpler way to get at a type defined in SDL.)  The second change is providing the type (object or string) to the middleware factory function provided by this package: `processTypeArgs`.  (The previous version's `upload` method has been preseved and implemented as a special case.)

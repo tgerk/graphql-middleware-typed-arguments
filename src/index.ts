@@ -3,6 +3,7 @@ import {
   GraphQLArgument,
   getNamedType,
   GraphQLNamedType,
+  isIntrospectionType,
 } from 'graphql'
 import { IMiddlewareFunction } from 'graphql-middleware'
 
@@ -44,6 +45,12 @@ function getFieldArguments(info: GraphQLResolveInfo): GraphQLArgument[] {
   const { fieldName, parentType } = info
   const typeFields = parentType.getFields()
   return typeFields[fieldName].args
+}
+
+function fieldHasIntrospectionType(info) {
+  const { fieldName, parentType } = info
+  const typeFields = parentType.getFields()
+  return isIntrospectionType(typeFields[fieldName].type)
 }
 
 /**
@@ -153,6 +160,7 @@ export function makeArgumentTransform<T, V>(
     }
 
     return null // exclude arguments when no value provided
+    // (undefined is changed to null, because TypeScript)
   }
 }
 
@@ -212,25 +220,28 @@ export function processTypeArgs<V, T>({
 
 export function visitAllArgs({ transform }): IMiddlewareFunction {
   return (resolve, parent, args, ctx, info) => {
-    const argDefs = getFieldArguments(info)
-    if (argDefs.length) {
-      // Apply argument transform function to all arguments
-      // The caller's transform function is applied to values that may be embedded
-      // in lists and promises, but not to null or undefined values
-      // Finally the resolver is called with transformed argument values
-      return (
-        Promise.all(
-          filterMap(
-            makeArgumentTransform(transform, parent, args, ctx, info),
-            argDefs,
-          ),
-        )
-          // substitute the transformed values into the args object
-          .then(newArgs =>
-            newArgs.reduce((args, newArg) => ({ ...args, ...newArg }), args),
+    // TODO avoid introspection types--very fussy about introducing async into sync code
+    if (!fieldHasIntrospectionType(info)) {
+      const argDefs = getFieldArguments(info)
+      if (argDefs.length) {
+        // Apply argument transform function to all arguments
+        // The caller's transform function is applied to values that may be embedded
+        // in lists and promises, but not to null or undefined values
+        // Finally the resolver is called with transformed argument values
+        return (
+          Promise.all(
+            filterMap(
+              makeArgumentTransform(transform, parent, args, ctx, info),
+              argDefs,
+            ),
           )
-          .then(newArgs => resolve(parent, newArgs, ctx, info))
-      )
+            // substitute the transformed values into the args object
+            .then(newArgs =>
+              newArgs.reduce((args, newArg) => ({ ...args, ...newArg }), args),
+            )
+            .then(newArgs => resolve(parent, newArgs, ctx, info))
+        )
+      }
     }
 
     return resolve(parent, args, ctx, info)
