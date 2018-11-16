@@ -47,12 +47,6 @@ function getFieldArguments(info: GraphQLResolveInfo): GraphQLArgument[] {
   return typeFields[fieldName].args
 }
 
-function fieldHasIntrospectionType(info) {
-  const { fieldName, parentType } = info
-  const typeFields = parentType.getFields()
-  return isIntrospectionType(typeFields[fieldName].type)
-}
-
 /**
  *
  * @param type
@@ -220,8 +214,7 @@ export function processTypeArgs<V, T>({
 
 export function visitAllArgs({ transform }): IMiddlewareFunction {
   return (resolve, parent, args, ctx, info) => {
-    // TODO avoid introspection types--very fussy about introducing async into sync code
-    if (!fieldHasIntrospectionType(info)) {
+    if (!isIntrospectionType(info.parentType)) {
       const argDefs = getFieldArguments(info)
       if (argDefs.length) {
         // Apply argument transform function to all arguments

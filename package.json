@@ -10,7 +10,10 @@
   "typescript": {
     "definition": "dist/index.d.ts"
   },
-  "repository": "https://github.com/tgerk/graphql-middleware-typed-arguments",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tgerk/graphql-middleware-typed-arguments.git"
+  },
   "author": "Tim Gerk <tjgerk@gmail.com>, Matic Zavadlal <matic.zavadlal@gmail.com>",
   "scripts": {
     "prepare": "npm run test",
@@ -22,7 +25,7 @@
     "pretty": "npx prettier --ignore-path .gitignore src{,/**}/{*.ts,*.js} --write"
   },
   "dependencies": {
-    "graphql-middleware": "1.7.8",
+    "graphql-middleware": "^2.0.2",
     "graphql-upload": "^8.0.1"
   },
   "devDependencies": {
@@ -45,10 +48,6 @@
     "branch": "master"
   },
   "homepage": "https://github.com/tgerk/graphql-middleware-typed-arguments",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/tgerk/graphql-middleware-typed-arguments.git"
-  },
   "bugs": {
     "url": "https://github.com/tgerk/graphql-middleware-typed-arguments/issues"
   },
